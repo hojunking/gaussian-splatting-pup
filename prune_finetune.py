@@ -56,7 +56,9 @@ def training(
         gaussians.restore(model_params, opt)
     elif args.start_pointcloud:
         gaussians.load_ply(args.start_pointcloud)
-        first_iter = int(args.start_pointcloud.split('/')[-2].split('_')[-1]) 
+        #first_iter = int(args.start_pointcloud.split('/')[-2].split('_')[-1]) 
+        first_iter = 30000 
+        
         gaussians.training_setup(opt)
         gaussians.max_radii2D = torch.zeros((gaussians.get_xyz.shape[0]), device="cuda")
     else:
@@ -142,10 +144,20 @@ def training(
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
+
+        # ScanNet cut_edge
+        h, w = image.shape[1:3]
+        ch, cw = h // 100, w // 100
+        Ll1 = l1_loss(image[:, ch:-ch, cw:-cw], gt_image[:, ch:-ch, cw:-cw])
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (
-            1.0 - ssim(image, gt_image)
+            1.0 - ssim(image[:, ch:-ch, cw:-cw], gt_image[:, ch:-ch, cw:-cw])
         )
+        
+        # original loss
+        # Ll1 = l1_loss(image, gt_image)
+        # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (
+        #     1.0 - ssim(image, gt_image)
+        # )
 
         loss.backward()
 
