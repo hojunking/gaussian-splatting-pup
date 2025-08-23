@@ -34,10 +34,12 @@ def readImages(renders_dir, gt_dir):
         image_names.append(fname)
     return renders, gts, image_names
 
-def evaluate(model_paths):
+# CHANGED: 'use_qp_logic' 인자를 받도록 함수 시그니처 수정
+def evaluate(model_paths, use_qp_logic):
 
     full_dict = {}
     per_view_dict = {}
+    # 참고: full_dict_polytopeonly 와 per_view_dict_polytopeonly는 원본 코드에 있지만 사용되지 않아 그대로 둡니다.
     full_dict_polytopeonly = {}
     per_view_dict_polytopeonly = {}
     print("")
@@ -55,43 +57,71 @@ def evaluate(model_paths):
             for method in os.listdir(test_dir):
                 print("Method:", method)
 
-                full_dict[scene_dir][method] = {}
-                per_view_dict[scene_dir][method] = {}
-                full_dict_polytopeonly[scene_dir][method] = {}
-                per_view_dict_polytopeonly[scene_dir][method] = {}
-
                 method_dir = test_dir / method
-                gt_dir = method_dir/ "gt"
                 renders_dir = method_dir / "renders"
-                renders, gts, image_names = readImages(renders_dir, gt_dir)
 
-                ssims = []
-                psnrs = []
-                lpipss = []
+                # NEW LOGIC START: QP 모드와 일반 모드를 분기 처리
+                eval_tasks = []
+                if use_qp_logic and "_qp" in scene_dir:
+                    print("INFO: [QP Mode] Dual evaluation started.")
+                    # 1. 원본 GT와 비교하는 태스크 추가
+                    qp_index = scene_dir.find("_qp")
+                    original_scene_path = scene_dir[:qp_index]
+                    original_gt_dir = Path(original_scene_path) / "test" / method / "gt"
+                    eval_tasks.append( (original_gt_dir, "_vs_OrigGT") )
+                    
+                    # 2. 압축 GT와 비교하는 태스크 추가
+                    compressed_gt_dir = method_dir / "gt"
+                    eval_tasks.append( (compressed_gt_dir, "_vs_CompGT") )
+                else:
+                    # 3. 일반 모드 (기존 방식) 태스크 추가
+                    print("INFO: [Default Mode] Single evaluation started.")
+                    default_gt_dir = method_dir / "gt"
+                    eval_tasks.append( (default_gt_dir, "") ) # 접미사 없음
 
-                for idx in tqdm(range(len(renders)), desc="Metric evaluation progress"):
-                    ssims.append(ssim(renders[idx], gts[idx]))
-                    psnrs.append(psnr(renders[idx], gts[idx]))
-                    lpipss.append(lpips(renders[idx], gts[idx], net_type='vgg'))
+                for gt_dir, suffix in eval_tasks:
+                    method_key = method + suffix
+                    print(f" -> Evaluating with GT: {gt_dir}")
+                    
+                    # method key 초기화
+                    full_dict[scene_dir][method_key] = {}
+                    per_view_dict[scene_dir][method_key] = {}
 
-                print("  SSIM : {:>12.7f}".format(torch.tensor(ssims).mean(), ".5"))
-                print("  PSNR : {:>12.7f}".format(torch.tensor(psnrs).mean(), ".5"))
-                print("  LPIPS: {:>12.7f}".format(torch.tensor(lpipss).mean(), ".5"))
-                print("")
+                    renders, gts, image_names = readImages(renders_dir, gt_dir)
 
-                full_dict[scene_dir][method].update({"SSIM": torch.tensor(ssims).mean().item(),
-                                                        "PSNR": torch.tensor(psnrs).mean().item(),
-                                                        "LPIPS": torch.tensor(lpipss).mean().item()})
-                per_view_dict[scene_dir][method].update({"SSIM": {name: ssim for ssim, name in zip(torch.tensor(ssims).tolist(), image_names)},
-                                                            "PSNR": {name: psnr for psnr, name in zip(torch.tensor(psnrs).tolist(), image_names)},
-                                                            "LPIPS": {name: lp for lp, name in zip(torch.tensor(lpipss).tolist(), image_names)}})
+                    # 이미지를 불러오지 못했으면 다음 태스크로 넘어감
+                    if not renders:
+                        continue
 
-            with open(scene_dir + "/results.json", 'w') as fp:
+                    ssims = []
+                    psnrs = []
+                    lpipss = []
+
+                    for idx in tqdm(range(len(renders)), desc="Metric evaluation progress"):
+                        ssims.append(ssim(renders[idx], gts[idx]))
+                        psnrs.append(psnr(renders[idx], gts[idx]))
+                        lpipss.append(lpips(renders[idx], gts[idx], net_type='vgg'))
+
+                    print("  SSIM : {:>12.7f}".format(torch.tensor(ssims).mean()))
+                    print("  PSNR : {:>12.7f}".format(torch.tensor(psnrs).mean()))
+                    print("  LPIPS: {:>12.7f}".format(torch.tensor(lpipss).mean()))
+                    print("")
+
+                    full_dict[scene_dir][method_key].update({"SSIM": torch.tensor(ssims).mean().item(),
+                                                             "PSNR": torch.tensor(psnrs).mean().item(),
+                                                             "LPIPS": torch.tensor(lpipss).mean().item()})
+                    per_view_dict[scene_dir][method_key].update({"SSIM": {name: s.item() for s, name in zip(ssims, image_names)},
+                                                                 "PSNR": {name: p.item() for p, name in zip(psnrs, image_names)},
+                                                                 "LPIPS": {name: l.item() for l, name in zip(lpipss, image_names)}})
+                # NEW LOGIC END
+
+            # JSON 저장 로직은 수정할 필요 없이 그대로 작동합니다.
+            with open(str(Path(scene_dir) / "results.json"), 'w') as fp:
                 json.dump(full_dict[scene_dir], fp, indent=True)
-            with open(scene_dir + "/per_view.json", 'w') as fp:
+            with open(str(Path(scene_dir) / "per_view.json"), 'w') as fp:
                 json.dump(per_view_dict[scene_dir], fp, indent=True)
-        except:
-            print("Unable to compute metrics for model", scene_dir)
+        except Exception as e:
+            print(f"Unable to compute metrics for model {scene_dir}. Error: {e}")
 
 if __name__ == "__main__":
     device = torch.device("cuda:0")
@@ -100,5 +130,10 @@ if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
     parser.add_argument('--model_paths', '-m', required=True, nargs="+", type=str, default=[])
+    # CHANGED: --qp 플래그 추가
+    parser.add_argument('--qp', action='store_true', 
+                        help="If specified, QP-models are evaluated against both original and compressed GTs.")
     args = parser.parse_args()
-    evaluate(args.model_paths)
+    
+    # CHANGED: evaluate 함수에 qp 플래그 값(True/False) 전달
+    evaluate(args.model_paths, args.qp)

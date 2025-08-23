@@ -118,8 +118,8 @@ def fetchPly(path):
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
-    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
-    return BasicPointCloud(points=positions, colors=colors, normals=normals)
+    #normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    return BasicPointCloud(points=positions, colors=colors, normals=None)
 
 def storePly(path, xyz, rgb):
     # Define the dtype for the structured array
@@ -315,10 +315,11 @@ def readScanNetInfo(path, white_background, eval, llffhold=8, extensions=[".png"
         )
 
     nerf_normalization = getNerfppNorm(cam_infos)
-
-    pc_path = '/point_cloud' 
-    scene_num = os.path.basename(path)
-    ply_path = os.path.join(pc_path, scene_num, "/point_cloud_30000.ply")
+    
+    ply_path = os.path.join(path, "origin_point_cloud.ply")
+    # pc_path = '/point_cloud' 
+    # scene_num = os.path.basename(path)
+    # ply_path = os.path.join(pc_path, scene_num, "/point_cloud_30000.ply")
     if not os.path.exists(ply_path):
         # Since this data set has no colmap data, we start with random points
         num_pts = 10

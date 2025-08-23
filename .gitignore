@@ -8,3 +8,6 @@ tensorboard_3d
 screenshots
 experiments/*
 *.ipynb_checkpoints/
+dataset/
+submodules
+experiments
