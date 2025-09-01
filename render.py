@@ -35,9 +35,12 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         rendering = render(view, gaussians, pipeline, background)["render"]
 
         gt = view.original_image[0:3, :, :]
-        torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
-
+        # torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
+        # torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+        image_basename = os.path.splitext(view.image_name)[0]
+        torchvision.utils.save_image(rendering, os.path.join(render_path, image_basename + ".png"))
+        torchvision.utils.save_image(gt, os.path.join(gts_path, image_basename + ".png"))
+        
     # FPS
     repeat = 3
     num_frames = len(views) * repeat

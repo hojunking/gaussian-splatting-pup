@@ -34,10 +34,36 @@ def readImages(renders_dir, gt_dir):
         image_names.append(fname)
     return renders, gts, image_names
 
-# CHANGED: 'use_qp_logic' 인자를 받도록 함수 시그니처 수정
+
+# NEW: Render(PNG) vs Original GT(JPG) 비교를 위한 새로운 함수
+def readImages_jpg_gt(renders_dir, gt_dir):
+    renders = []
+    gts = []
+    image_names = []
+    for fname in sorted(os.listdir(renders_dir)):
+        if '.ipynb' in fname or not fname.lower().endswith('.png'):
+            continue
+        
+        render_path = renders_dir / fname
+        
+        gt_basename = os.path.splitext(fname)[0]
+        gt_filename = gt_basename + ".jpg"
+        gt_path = gt_dir / gt_filename
+
+        if os.path.exists(gt_path):
+            try:
+                render = Image.open(render_path)
+                gt = Image.open(gt_path)
+                
+                renders.append(tf.to_tensor(render).unsqueeze(0)[:, :3, :, :].cuda())
+                gts.append(tf.to_tensor(gt).unsqueeze(0)[:, :3, :, :].cuda())
+                image_names.append(fname)
+            except Exception as e:
+                print(f"Warning: Could not read image pair ({fname}, {gt_filename}). Error: {e}")
+    return renders, gts, image_names
+
 def evaluate(model_paths, use_qp_logic):
 
-    # NEW: 원본 GT 이미지들이 있는 고정된 기본 경로
     ORIGINAL_GT_BASE_PATH = "/workdir/dataset/scannet_full_frame/scannet-top10scene-full"
 
     full_dict = {}
@@ -70,18 +96,18 @@ def evaluate(model_paths, use_qp_logic):
                     qp_index = scene_dir.find("_qp")
                     base_scene_name = Path(scene_dir[:qp_index]).name
                     original_gt_dir = Path(ORIGINAL_GT_BASE_PATH) / base_scene_name / "color"
-                    eval_tasks.append( (original_gt_dir, "_vs_OrigGT") )
+                    eval_tasks.append( (original_gt_dir, "_vs_OrigGT", "jpg_gt") )
                     
                     # 2. 압축 GT와 비교하는 태스크 추가
                     compressed_gt_dir = method_dir / "gt"
-                    eval_tasks.append( (compressed_gt_dir, "_vs_CompGT") )
+                    eval_tasks.append( (compressed_gt_dir, "_vs_CompGT", "png_gt") )
                 else:
                     # 3. 일반 모드 (기존 방식) 태스크 추가
                     print("INFO: [Default Mode] Single evaluation started.")
                     default_gt_dir = method_dir / "gt"
-                    eval_tasks.append( (default_gt_dir, "") ) # 접미사 없음
+                    eval_tasks.append( (default_gt_dir, "", "png_gt") )
 
-                for gt_dir, suffix in eval_tasks:
+                for gt_dir, suffix, gt_type in eval_tasks:
                     method_key = method + suffix
                     print(f" -> Evaluating with GT: {gt_dir}")
                     
@@ -89,7 +115,15 @@ def evaluate(model_paths, use_qp_logic):
                     full_dict[scene_dir][method_key] = {}
                     per_view_dict[scene_dir][method_key] = {}
 
-                    renders, gts, image_names = readImages(renders_dir, gt_dir)
+                    # GT 타입에 따라 적절한 함수를 호출
+                    if gt_type == "jpg_gt":
+                        renders, gts, image_names = readImages_jpg_gt(renders_dir, gt_dir)
+                    else: # "png_gt" 또는 기본값
+                        renders, gts, image_names = readImages(renders_dir, gt_dir)
+
+                    if not renders:
+                        print(" -> No matching images found. Skipping.")
+                        continue
 
                     # 이미지를 불러오지 못했으면 다음 태스크로 넘어감
                     if not renders:
