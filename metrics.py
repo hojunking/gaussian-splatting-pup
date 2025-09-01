@@ -37,9 +37,11 @@ def readImages(renders_dir, gt_dir):
 # CHANGED: 'use_qp_logic' 인자를 받도록 함수 시그니처 수정
 def evaluate(model_paths, use_qp_logic):
 
+    # NEW: 원본 GT 이미지들이 있는 고정된 기본 경로
+    ORIGINAL_GT_BASE_PATH = "/workdir/dataset/scannet_full_frame/scannet-top10scene-full"
+
     full_dict = {}
     per_view_dict = {}
-    # 참고: full_dict_polytopeonly 와 per_view_dict_polytopeonly는 원본 코드에 있지만 사용되지 않아 그대로 둡니다.
     full_dict_polytopeonly = {}
     per_view_dict_polytopeonly = {}
     print("")
@@ -66,8 +68,8 @@ def evaluate(model_paths, use_qp_logic):
                     print("INFO: [QP Mode] Dual evaluation started.")
                     # 1. 원본 GT와 비교하는 태스크 추가
                     qp_index = scene_dir.find("_qp")
-                    original_scene_path = scene_dir[:qp_index]
-                    original_gt_dir = Path(original_scene_path) / "test" / method / "gt"
+                    base_scene_name = Path(scene_dir[:qp_index]).name
+                    original_gt_dir = Path(ORIGINAL_GT_BASE_PATH) / base_scene_name / "color"
                     eval_tasks.append( (original_gt_dir, "_vs_OrigGT") )
                     
                     # 2. 압축 GT와 비교하는 태스크 추가
